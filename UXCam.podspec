@@ -19,7 +19,7 @@ Pod::Spec.new do |s|
   
   s.platform             = :ios, 11.0
 
-  s.source                 = { :http => "https://raw.githubusercontent.com/uxcam/ios-sdk/#{s.version}/UXCam.xcframework.zip" }
+  s.source                 = { :http => "https://raw.githubusercontent.com/uxcam/uxcam-ios-sdk/#{s.version}/UXCam.xcframework.zip" }
   s.vendored_frameworks = 'UXCam.xcframework'
 
   s.static_framework     = true
