@@ -1,0 +1,31 @@
+name: Publish to cocoapods
+on:
+  workflow_dispatch:
+    inputs:
+      publish: 
+        description: Publish to cocoapods
+        type: boolean
+        default: false
+        required: true
+    
+jobs:
+  build:
+    runs-on: macOS-latest
+    steps:
+      - name: Check out current commit (${{github.sha}})
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GH_RELEASE_PAT }}
+          fetch-depth: 0
+      - name: Verify podspec
+        run: |
+            pod spec lint UXCam.podspec
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+      - name: Upload to cocoapods
+        if: ${{ inputs.publish }}
+        run: |
+            pod trunk push UXCam.podspec
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+      
