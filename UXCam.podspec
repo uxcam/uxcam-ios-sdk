@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name                 = 'UXCam'
-  s.version              = '3.6.21'
+  s.version              = '3.6.22'
   
   s.summary             = "UXCam SDK for iOS applications"
   s.description         = <<-DESC
@@ -10,7 +10,7 @@ Pod::Spec.new do |s|
   s.homepage             = "https://uxcam.com/"
   s.license              = {
     'type' => 'Copyright',
-    'text' => 'Copyright (c) 2013-2023, UXCam Inc. All rights reserved.'
+    'text' => 'Copyright (c) 2013-2025, UXCam Inc. All rights reserved.'
   }
 
   s.author               = { 'UXCam' => 'admin@uxcam.com' }
