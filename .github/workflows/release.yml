@@ -1,0 +1,86 @@
+name: Create Release on Main Merge
+
+# Trigger the workflow when changes are pushed to the main branch.
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        
+      - name: Unzip UXCam.xcframework
+        run: |
+          echo "Unzipping UXCam.xcframework..."
+          unzip -o UXCam.xcframework.zip -d .
+          
+      - name: List Framework Directory
+        run: |
+          ls -la UXCam.xcframework
+          ls -la UXCam.xcframework/Info.plist
+
+      - name: Extract Version Number
+        id: get_version
+        run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" UXCam.xcframework/ios-arm64/UXCam.framework/Info.plist)
+          echo "Found version: ${VERSION}"
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Set git user credentials
+        run: |
+            git config user.email "uxcam-mobile@uxcam.com"
+            git config user.name "UXCam"
+            
+      - name: Create Git Tag
+        run: |
+            TAG="${{ env.VERSION }}"
+            echo "Creating tag ${TAG}"
+            git tag ${TAG}
+            git push origin ${TAG}
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ env.VERSION }}
+          name: "v${{ env.VERSION }}"
+          body: "Release v${{ env.VERSION }}"
+          
+      - name: Verify podspec
+        run: |
+            pod spec lint UXCam.podspec
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+          
+      - name: Upload to cocoapods
+        if: ${{ inputs.publish }}
+        run: |
+            pod trunk push UXCam.podspec
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+          
+      - name: Generate Slack notification payload
+        id: slack-payload
+        run: |
+          DATE=$(date +'%d/%m/%Y')
+          ESCAPED_DATE=$(echo "$DATE" | sed -e 's/[\/&]/\\&/g')
+          payload_path='./.github/workflows/slack-payload.json'
+          payload=$(cat $payload_path)
+          logs="${{ steps.changelogs.outputs.logs }}"
+          logs=$(sed -e 's/\\n/\\\\n/g' <<< $logs)
+          echo $logs
+
+          echo "$payload" | sed -e "s/__NATIVE_VERSION__/${{ env.VERSION }}/g" -e "s/__RELEASE_DATE__/${ESCAPED_DATE}/g" -e "s/__CHANGELOG__/$logs/g" > $payload_path
+          cat $payload_path
+      - name: Send notification to Slack
+        id: slack
+        uses: slackapi/slack-github-action@v1.18.0
+        with:
+          payload-file-path: './.github/workflows/slack-payload.json'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
