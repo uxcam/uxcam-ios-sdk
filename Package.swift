@@ -2,7 +2,7 @@
 import PackageDescription
 
 let version = "3.6.25-beta.2"
-let checksum = "6b81051de77bac7eb56cd3b7715d13b9fa070e25768c965d1eaed44c5a9f58c0"
+let checksum = "bd05fcc30e19831bc571e47a9db59e4a3816213970d89df8e9629ba8fa95cfe9"
 let repoName = "uxcam-ios-sdk"
 
 let package = Package(
