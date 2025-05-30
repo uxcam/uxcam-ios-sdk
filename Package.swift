@@ -2,7 +2,7 @@
 import PackageDescription
 
 let version = "3.6.25-beta.2"
-let checksum = "ec881ba3242b4863b2e218fd1bd9800529daebb4e4f840448d826685eccac4e4"
+let checksum = "bd05fcc30e19831bc571e47a9db59e4a3816213970d89df8e9629ba8fa95cfe9"
 let repoName = "uxcam-ios-sdk"
 
 let package = Package(
@@ -49,7 +49,7 @@ let package = Package(
 
         .binaryTarget(
             name: "UXCam",
-            url: "https://raw.githubusercontent.com/uxcam/\(repoName)/refs/heads/beta/UXCam.xcframework.zip",
+            url: "https://raw.githubusercontent.com/uxcam/\(repoName)/\(version)/UXCam.xcframework.zip",
             checksum: checksum
         )
     ]
