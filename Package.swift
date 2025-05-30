@@ -1,8 +1,8 @@
 // swift-tools-version:5.3
 import PackageDescription
 
-let version = "3.6.24"
-let checksum = "45a475f60183ea9adff52de66f147ef73a86cded64d37a086b5bb5121b2847a2"
+let version = "3.6.25-beta.2"
+let checksum = "bd05fcc30e19831bc571e47a9db59e4a3816213970d89df8e9629ba8fa95cfe9"
 let repoName = "uxcam-ios-sdk"
 
 let package = Package(
@@ -49,7 +49,7 @@ let package = Package(
 
         .binaryTarget(
             name: "UXCam",
-            url: "https://raw.githubusercontent.com/uxcam/\(repoName)/\(version)/UXCam.xcframework.zip",
+            url: "https://raw.githubusercontent.com/uxcam/\(repoName)/refs/heads/beta/UXCam.xcframework.zip",
             checksum: checksum
         )
     ]
