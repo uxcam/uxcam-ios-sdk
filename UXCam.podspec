@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name                 = 'UXCam'
-  s.version              = '3.7.0'
+  s.version              = '3.7.1'
   
   s.summary             = "UXCam SDK for iOS applications"
   s.description         = <<-DESC
@@ -21,11 +21,6 @@ Pod::Spec.new do |s|
 
   s.source                 = { :http => "https://raw.githubusercontent.com/uxcam/uxcam-ios-sdk/#{s.version}/UXCam.xcframework.zip" }
   s.vendored_frameworks = 'UXCam.xcframework'
-
-  # Ensure the final app links against Swift toolchain libs even if it's Obj-C only
-  s.user_target_xcconfig = {
-    'LIBRARY_SEARCH_PATHS' => '$(inherited) "$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)" "/usr/lib/swift"'
-  }
 
   s.static_framework     = true
   s.libraries             = 'z', 'iconv', 'c++'
