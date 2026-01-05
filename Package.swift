@@ -1,8 +1,8 @@
 // swift-tools-version:5.3
 import PackageDescription
 
-let version = "3.7.5"
-let checksum = "04f0184bdb011a140fb029b085577a7c0a7b40f65ef93653cf155236450470fb"
+let version = "3.7.6"
+let checksum = "3a55175c6d000accf789987aeeda03d40fecc10acb491fc8363c3c7ea432e9d8"
 let repoName = "uxcam-ios-sdk"
 
 let package = Package(
