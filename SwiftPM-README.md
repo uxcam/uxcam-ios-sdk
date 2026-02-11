@@ -13,7 +13,7 @@ File -> Swift Packages -> Add Package Dependency
 
 <img src="docs/resources/SPM-add-package.jpg" width="500">
 
-Select this repository as the URL - https://github.com/uxcam/ios-sdk
+Select this repository as the URL - https://github.com/uxcam/uxcam-ios-sdk
 
 <img src="docs/resources/SPM-select-branch.png" width="500">
 
