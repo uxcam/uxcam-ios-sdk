@@ -9,7 +9,7 @@ Starting with the 3.3.0 release UXCam for iOS supports installation via [Swift P
 
 ### In Xcode
 
-File -> Swift Packages -> Add Package Dependency
+File  -> Add Package Dependencies...
 
 <img src="docs/resources/SPM-add-package.png" width="500">
 
