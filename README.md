@@ -4,8 +4,6 @@ This is the UXCam iOS SDK
 
 # To install
 
-[NB: If you are currently using version 3.2.6 or earlier please do a deep clean of your build environment before updating. XCode has exhibited some issues with the change from a .framework packaged library to .xcframework]
-
 ## Using [Cocoapods](https://cocoapods.org/)
 
 Add the following to your Podfile:
@@ -19,12 +17,9 @@ NB: Make sure you are using Cocoapods version 1.10.0 or higher - earlier version
 
 ## Using Swift Package Manager
 
-Starting with the 3.3.0 release UXCam for iOS supports installation via [Swift Package Manager](https://swift.org/package-manager/) in Beta status. Please report any problems here.
-
-## Using SPM
+Starting with the 3.3.0 release UXCam for iOS supports installation via [Swift Package Manager](https://swift.org/package-manager/).
 
 Follow the instructions [here](SwiftPM-README.md)
-[NB: on Version 12.2 (12B45b) on macOS 10.15.7 (19H15) picking to resolve to a version is crashing XCode. Pick 'main' branch for a working integration.]
 
 # Integration
 
@@ -61,7 +56,7 @@ and in your `func application(_ application: UIApplication, didFinishLaunchingWi
 
 ## Developer Documentation
 
-Documentation on using the various API methods can be found [here](https://help.uxcam.com/hc/en-us/categories/115000129131-Developer-Guide)
+Documentation on using the various API methods can be found [here](https://developer.uxcam.com/docs/ios)
 
 
 
