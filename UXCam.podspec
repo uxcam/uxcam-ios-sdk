@@ -8,10 +8,7 @@ Pod::Spec.new do |s|
                   This is version #{s.version} of the SDK - see CHANGELOG for details
                   DESC
   s.homepage             = "https://uxcam.com/"
-  s.license              = {
-    'type' => 'Copyright',
-    'text' => 'Copyright (c) 2013-2026, UXCam Inc. All rights reserved.'
-  }
+  s.license              = { :type => 'BSD', :file => 'LICENSE' }
 
   s.author               = { 'UXCam' => 'admin@uxcam.com' }
   s.social_media_url     = "https://www.twitter.com/uxcam"

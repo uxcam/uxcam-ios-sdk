@@ -1,85 +1,132 @@
 name: Create Release on Main Merge
 
-# Trigger the workflow when changes are pushed to the main branch.
 on:
   push:
     branches:
       - main
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
-    runs-on: macos-latest
+    name: Tag, release, publish to CocoaPods
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: write # create tag + GitHub Release
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
-        
+      - name: Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Unzip UXCam.xcframework
-        run: |
-          echo "Unzipping UXCam.xcframework..."
-          unzip -o UXCam.xcframework.zip -d .
-          
-      - name: List Framework Directory
-        run: |
-          ls -la UXCam.xcframework
-          ls -la UXCam.xcframework/Info.plist
+        run: unzip -o UXCam.xcframework.zip -d .
 
-      - name: Extract Version Number
-        id: get_version
+      - name: Extract version
+        id: version
         run: |
-          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" UXCam.xcframework/ios-arm64/UXCam.framework/Info.plist)
-          echo "Found version: ${VERSION}"
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          raw="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" UXCam.xcframework/ios-arm64/UXCam.framework/Info.plist)"
+          version="$(printf '%s' "$raw" | tr -d '[:space:]')"
+          case "$version" in
+            ''|*[!0-9.]*|.*|*..*|*.)
+              echo "::error::Invalid version from plist: '$raw'"
+              exit 1
+              ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Found version: $version"
 
-      - name: Set git user credentials
+      - name: Check tag exists
+        id: tag_check
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-            git config user.email "uxcam-mobile@uxcam.com"
-            git config user.name "UXCam"
-            
-      - name: Create Git Tag
-        run: |
-            TAG="${{ env.VERSION }}"
-            echo "Creating tag ${TAG}"
-            git tag ${TAG}
-            git push origin ${TAG}
+          if git rev-parse --verify "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists; tag step will be skipped."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Create GitHub Release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: ${{ env.VERSION }}
-          name: "v${{ env.VERSION }}"
-          body: "Release v${{ env.VERSION }}"
-          
-      - name: Verify podspec
+      - name: Check pod already published
+        id: pod_check
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-            pod spec lint UXCam.podspec
+          if curl -fsSL "https://trunk.cocoapods.org/api/v1/pods/UXCam" \
+              | grep -q "\"name\":[[:space:]]*\"$VERSION\""; then
+            echo "UXCam $VERSION already on cocoapods trunk; pod push will be skipped."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Nothing to do - exit early
+        if: steps.tag_check.outputs.exists == 'true' && steps.pod_check.outputs.exists == 'true'
+        run: |
+          echo "Tag and pod both already published. Bump version to release."
+          exit 0
+
+      - name: Verify podspec (local lint, no remote tag required)
+        if: steps.tag_check.outputs.exists == 'false' || steps.pod_check.outputs.exists == 'false'
+        run: pod lib lint UXCam.podspec --allow-warnings --analyze --fail-fast --verbose
+
+      - name: Create tag and GitHub Release
+        if: steps.tag_check.outputs.exists == 'false'
+        id: release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url="$(gh release create "$VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --generate-notes \
+            --latest)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to cocoapods 🚀
+        if: steps.pod_check.outputs.exists == 'false'
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
-          
-      - name: Upload to cocoapods
-        run: |
-            pod trunk push UXCam.podspec
-        env:
-          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
-          
-      - name: Generate Slack notification payload
-        id: slack-payload
-        run: |
-          DATE=$(date +'%d/%m/%Y')
-          ESCAPED_DATE=$(echo "$DATE" | sed -e 's/[\/&]/\\&/g')
-          payload_path='./.github/workflows/slack-payload.json'
-          payload=$(cat $payload_path)
-          logs="${{ steps.changelogs.outputs.logs }}"
-          logs=$(sed -e 's/\\n/\\\\n/g' <<< $logs)
-          echo $logs
+        run: pod trunk push UXCam.podspec
 
-          echo "$payload" | sed -e "s/__NATIVE_VERSION__/${{ env.VERSION }}/g" -e "s/__RELEASE_DATE__/${ESCAPED_DATE}/g" -e "s/__CHANGELOG__/$logs/g" > $payload_path
-          cat $payload_path
-      - name: Send notification to Slack
-        id: slack
-        uses: slackapi/slack-github-action@v1.18.0
-        with:
-          payload-file-path: './.github/workflows/slack-payload.json'
+      - name: Notify Slack
+        if: steps.tag_check.outputs.exists == 'false' || steps.pod_check.outputs.exists == 'false'
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+          PKG_VERSION: v${{ steps.version.outputs.version }}
+          RELEASE_URL: ${{ steps.release.outputs.url || format('https://github.com/{0}/releases/tag/{1}', github.repository, steps.version.outputs.version) }}
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload-templated: true
+          payload: |
+            text: ":rocket: UXCam iOS SDK {{ env.PKG_VERSION }} released :rocket:"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "<!here> UXCam iOS SDK *{{ env.PKG_VERSION }}* has been released. :rocket:"
+              - type: section
+                fields:
+                  - type: mrkdwn
+                    text: "*SDK*\niOS (native)"
+                  - type: mrkdwn
+                    text: "*Version*\n{{ env.PKG_VERSION }}"
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "<{{ env.RELEASE_URL }}|View release notes>"
