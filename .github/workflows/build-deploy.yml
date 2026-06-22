@@ -131,11 +131,14 @@ jobs:
         with:
           ref: develop
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Merge release commit into develop
         env:
           MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           RELEASE_BRANCH: ${{ github.head_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -146,11 +149,10 @@ jobs:
           git checkout develop
           git reset --hard origin/develop
           git merge --no-ff "$MERGE_COMMIT_SHA" -m "chore: merge $RELEASE_BRANCH back into develop"
-          git push origin develop
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" develop
 
   publish:
     name: Publish tagged release (CocoaPods + Slack)
-    # Triggered by the bare-semver tag pushed manually after the release PR merges.
     if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
     runs-on: macos-15
     timeout-minutes: 30
