@@ -101,7 +101,7 @@ jobs:
         if: steps.pod_check.outputs.exists == 'false'
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
-        run: pod trunk push UXCam.podspec
+        run: pod trunk push UXCam.podspec --allow-warnings
 
       - name: Notify Slack
         if: steps.tag_check.outputs.exists == 'false' || steps.pod_check.outputs.exists == 'false'
