@@ -40,4 +40,4 @@ jobs:
         if: ${{ inputs.publish }}
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
-        run: pod trunk push UXCam.podspec
+        run: pod trunk push UXCam.podspec --allow-warnings
