@@ -1,5 +1,12 @@
 ## Using Swift Package Manager
 
+> [!IMPORTANT]
+> New integrations should use
+> [`https://github.com/uxcam/uxcam-ios`](https://github.com/uxcam/uxcam-ios)
+> instead of this repository. Existing integrations of this repository keep
+> working; see the
+> [migration guide](https://github.com/uxcam/uxcam-ios/blob/main/MIGRATION.md).
+
 Starting with the 3.3.0 release UXCam for iOS supports installation via [Swift Package Manager](https://swift.org/package-manager/)
 
 

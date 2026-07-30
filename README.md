@@ -1,5 +1,21 @@
 # UXCam iOS SDK
 
+> [!IMPORTANT]
+> **This repository has moved to [`uxcam/uxcam-ios`](https://github.com/uxcam/uxcam-ios).**
+>
+> Versions after 3.9.0 are published only from the new repository, which is a
+> fraction of the size to clone. This repository stays available permanently,
+> so every existing integration and published version keeps working — but it
+> receives no further updates.
+>
+> - **New Swift Package Manager users**: add
+>   `https://github.com/uxcam/uxcam-ios` instead of this repository.
+> - **Existing SPM users**: follow the
+>   [migration guide](https://github.com/uxcam/uxcam-ios/blob/main/MIGRATION.md)
+>   to keep receiving updates. Never add both package URLs to one project.
+> - **CocoaPods users**: no action needed — `pod 'UXCam'` continues to deliver
+>   new versions unchanged.
+
 This is the UXCam iOS SDK
 
 # To install
