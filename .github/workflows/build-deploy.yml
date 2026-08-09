@@ -1,0 +1,308 @@
+name: Build and deploy
+
+# Release flow (for SPM + CocoaPods):
+#   1. Xcode Cloud builds the framework off a framework-repo tag and opens a
+#      release/v<version> PR into main here (artifact + Package.swift + podspec +
+#      CHANGELOG.md).
+#   2. release_readiness validates that PR (versions line up, changelog present,
+#      podspec lints, nothing already published).
+#   3. When the PR is merged, manually create + push a bare-semver tag
+#      <version> (e.g. 3.9.0, no "v" prefix) pointing at the merge commit.
+#   4. The pushed tag triggers publish: GitHub Release + CocoaPods + Slack.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, closed]
+  push:
+    tags:
+      - "*.*.*"
+
+permissions: {}
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release_readiness:
+    name: Validate release branch
+    if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' && startsWith(github.head_ref, 'release/v') }}
+    runs-on: macos-15
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+          disable-sudo: true
+
+      - name: Check out ${{ github.sha }}
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Unzip UXCam.xcframework
+        run: unzip -o UXCam.xcframework.zip -d .
+
+      - name: Validate release branch inputs
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          expected_version="${BRANCH_NAME#release/v}"
+
+          if ! echo "$expected_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
+            echo "::error::Release branch must be named release/v<semver>; got $BRANCH_NAME"
+            exit 1
+          fi
+
+          xc_version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" UXCam.xcframework/ios-arm64/UXCam.framework/Info.plist | tr -d '[:space:]')"
+          pkg_version="$(sed -n 's/^let version = "\([^"]*\)".*/\1/p' Package.swift)"
+          pod_version="$(sed -n "s/.*s\.version[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" UXCam.podspec)"
+
+          for pair in "xcframework:$xc_version" "Package.swift:$pkg_version" "podspec:$pod_version"; do
+            name="${pair%%:*}"; val="${pair#*:}"
+            if [ "$val" != "$expected_version" ]; then
+              echo "::error::$name version '$val' does not match release branch version '$expected_version'"
+              exit 1
+            fi
+          done
+
+          notes="$(awk -v ver="$expected_version" -F'|' '
+            function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+            { left = trim($1); right = $0; sub(/^[^|]*\|/, "", right); right = trim(right) }
+            left ~ /^[0-9]+\.[0-9]+\.[0-9]+$/ {
+              if (capturing) exit
+              if (left == ver) { capturing = 1; if (right != "") print "• " right }
+              next
+            }
+            capturing && /\|/ && left == "" { if (right != "") print "• " right; next }
+            capturing && $0 !~ /\|/ { exit }
+          ' CHANGELOG.md || true)"
+          if [ -z "$notes" ]; then
+            echo "::error::CHANGELOG.md has no entry for $expected_version"
+            exit 1
+          fi
+
+          # iOS tags are bare semver (no v prefix).
+          if git rev-parse -q --verify "refs/tags/$expected_version" >/dev/null; then
+            echo "::error::Git tag $expected_version already exists"
+            exit 1
+          fi
+
+          if gh release view "$expected_version" --json tagName >/dev/null 2>&1; then
+            echo "::error::GitHub Release $expected_version already exists"
+            exit 1
+          fi
+
+          if curl -fsSL "https://trunk.cocoapods.org/api/v1/pods/UXCam" \
+              | grep -q "\"name\":[[:space:]]*\"$expected_version\""; then
+            echo "::error::UXCam $expected_version is already published to CocoaPods trunk"
+            exit 1
+          fi
+
+          echo "Release branch $BRANCH_NAME validated for version $expected_version."
+
+      - name: Verify podspec (local lint)
+        run: pod lib lint UXCam.podspec --allow-warnings --analyze --fail-fast --verbose
+
+  sync_develop:
+    name: Merge release back into develop
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/v') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+          disable-sudo: true
+
+      - name: Check out develop
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: develop
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Merge release commit into develop
+        env:
+          MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          RELEASE_BRANCH: ${{ github.head_ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+          git fetch origin main develop --tags
+          git checkout develop
+          git reset --hard origin/develop
+          git merge --no-ff "$MERGE_COMMIT_SHA" -m "chore: merge $RELEASE_BRANCH back into develop"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" develop
+
+  publish:
+    name: Publish tagged release (CocoaPods + Slack)
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: write # create the GitHub Release
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Unzip UXCam.xcframework
+        run: unzip -o UXCam.xcframework.zip -d .
+
+      - name: Resolve and validate version
+        id: version
+        run: |
+          raw="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" UXCam.xcframework/ios-arm64/UXCam.framework/Info.plist)"
+          version="$(printf '%s' "$raw" | tr -d '[:space:]')"
+          case "$version" in
+            ''|*[!0-9.]*|.*|*..*|*.)
+              echo "::error::Invalid version from plist: '$raw'"
+              exit 1
+              ;;
+          esac
+          # On a tag push the tag name must match the artifact version.
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "$version" ]; then
+            echo "::error::Tag '${GITHUB_REF_NAME}' does not match artifact version '$version'"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing version: $version"
+
+      - name: Check GitHub Release exists
+        id: release_check
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$VERSION" --json tagName >/dev/null 2>&1; then
+            echo "GitHub Release $VERSION already exists; release step will be skipped."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check pod already published
+        id: pod_check
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if curl -fsSL "https://trunk.cocoapods.org/api/v1/pods/UXCam" \
+              | grep -q "\"name\":[[:space:]]*\"$VERSION\""; then
+            echo "UXCam $VERSION already on cocoapods trunk; pod push will be skipped."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Nothing to do - exit early
+        if: steps.release_check.outputs.exists == 'true' && steps.pod_check.outputs.exists == 'true'
+        run: |
+          echo "Release and pod both already published for this version."
+          exit 0
+
+      - name: Verify podspec (local lint)
+        if: steps.release_check.outputs.exists == 'false' || steps.pod_check.outputs.exists == 'false'
+        run: pod lib lint UXCam.podspec --allow-warnings --analyze --fail-fast --verbose
+
+      - name: Extract changelog
+        if: steps.release_check.outputs.exists == 'false' || steps.pod_check.outputs.exists == 'false'
+        id: changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          notes="$(awk -v ver="$VERSION" -F'|' '
+            function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+            { left = trim($1); right = $0; sub(/^[^|]*\|/, "", right); right = trim(right) }
+            left ~ /^[0-9]+\.[0-9]+\.[0-9]+$/ {
+              if (capturing) exit
+              if (left == ver) { capturing = 1; if (right != "") print "• " right }
+              next
+            }
+            capturing && /\|/ && left == "" { if (right != "") print "• " right; next }
+            capturing && $0 !~ /\|/ { exit }
+          ' CHANGELOG.md || true)"
+          if [ -z "$notes" ]; then
+            echo "::warning::No CHANGELOG.md section found for $VERSION; release notes will fall back."
+            notes="• See release notes"
+          fi
+          printf '%s\n' "$notes" > changelog_section.txt
+          echo "Extracted changelog for $VERSION:"
+          cat changelog_section.txt
+
+      - name: Upload to cocoapods 🚀
+        if: steps.pod_check.outputs.exists == 'false'
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+        run: pod trunk push UXCam.podspec
+
+      - name: Build Slack payload
+        if: steps.release_check.outputs.exists == 'false' || steps.pod_check.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_URL: ${{ steps.release.outputs.url || format('https://github.com/{0}/releases/tag/{1}', github.repository, steps.version.outputs.version) }}
+        run: |
+          notes="$(cat changelog_section.txt)"
+          [ -n "$notes" ] || notes="• See release notes"
+          # %d/%m/%Y to match the historical message format (e.g. 18/05/2026).
+          date_str="$(date +'%d/%m/%Y')"
+          jq -n \
+            --arg ver "$VERSION" \
+            --arg date "$date_str" \
+            --arg changelog "$notes" \
+            --arg url "$RELEASE_URL" \
+            '{
+              text: (":rocket: UXCam iOS SDK " + $ver + " released :rocket:"),
+              blocks: [
+                { type: "section",
+                  text: { type: "mrkdwn",
+                    text: ("<!here> UXCam iOS Native SDK " + $ver
+                         + " has been published to Cocoapods and SPM\n"
+                         + ":rocket: UXCam iOS SDK  " + $ver + " :rocket:\n"
+                         + ":date:  " + $date) } },
+                { type: "section",
+                  text: { type: "mrkdwn",
+                    text: ("*CHANGELOG (Internal):*\n" + $changelog) } },
+                { type: "section",
+                  fields: [
+                    { type: "mrkdwn", text: "*SDK*\niOS (native)" },
+                    { type: "mrkdwn", text: ("*Version*\n" + $ver) }
+                  ] },
+                { type: "section",
+                  text: { type: "mrkdwn",
+                    text: ("<" + $url + "|View release notes>") } }
+              ]
+            }' > slack-payload.json
+          echo "Slack payload:"
+          cat slack-payload.json
+
+      - name: Notify Slack
+        if: steps.release_check.outputs.exists == 'false' || steps.pod_check.outputs.exists == 'false'
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload-file-path: slack-payload.json
